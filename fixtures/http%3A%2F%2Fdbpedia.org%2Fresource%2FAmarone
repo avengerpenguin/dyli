@@ -1,0 +1,9 @@
+{
+    "code": 303,
+    "body": "",
+    "headers": {
+        "Location": "http://dbpedia.org/data/Amarone.ttl",
+        "Content-Type": "text/turtle",
+        "Server": "Virtuoso/07.20.3222 (Linux) i686-generic-linux-glibc212-64  VDB"
+    }
+}
