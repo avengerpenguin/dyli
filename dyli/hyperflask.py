@@ -17,7 +17,7 @@ class Hyperflask(object):
         self.links = []
 
         self.app.add_url_rule('/', view_func=self.fallback_get, methods=['GET'])
-        #self.app.add_url_rule('/<path:path>', view_func=self.fallback_get, methods=['GET'])
+        self.app.add_url_rule('/<path:path>', view_func=self.fallback_get, methods=['GET'])
 
     def resource(self, path, links=None, **options):
         if links:
@@ -54,21 +54,23 @@ class Hyperflask(object):
         return self.resource(path, **options)
 
     @flask_rdf
-    def fallback_get(self, graph=None):
+    def fallback_get(self, graph: Graph=None, path: str=None):
         url = str(yarl.URL(request.url).with_query(None))
+        if path:
+            url = str(yarl.URL(request.url).with_query(None).with_path(path))
 
         r = self.server_state.query('''
         PREFIX schema: <http://schema.org/>
         CONSTRUCT {
-            ?x ?p1 ?y .
-            ?y ?p2 ?z .
+            ?a ?p1 ?b .
+            ?b ?p2 ?c .
         }
         WHERE {
-             {?x ?p1 ?y .}
+             {?a ?p1 ?b .}
              UNION
-             {?x ?p1 ?y . ?y ?p2 ?z .}
+             {?a ?p1 ?b . ?b ?p2 ?c .}
         }
-        ''', initBindings={'x': URIRef(url)})
+        ''', initBindings={'a': URIRef(url)})
 
         if graph is None:
             g = Graph()
@@ -81,6 +83,7 @@ class Hyperflask(object):
         if len(g) > 0:
             return Response(data=g)
         else:
+            print('Cannot find {url} in {subjects}'.format(url=url, subjects=', '.join(set(self.server_state.subjects()))))
             return FlaskResponse(status=404)
 
     def query(self, name, path, params):
@@ -101,6 +104,7 @@ class Hyperflask(object):
     def add_data(self, g):
         for t in g:
             self.server_state.add(t)
+        print(self.server_state.serialize(format='turtle').decode('utf-8'))
 
     def initialise(self, definition):
         g = Graph()

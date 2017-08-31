@@ -8,7 +8,8 @@ import requests
 import hyperspace
 from hashlib import md5
 from hypothesis import settings, Verbosity, assume
-from hypothesis.strategies import just, tuples, sampled_from, composite, dictionaries, text
+from hypothesis.strategies import just, tuples, sampled_from, composite, \
+    dictionaries, text, integers
 
 import dyli
 
@@ -69,7 +70,7 @@ def mock_requests_to_use_flask_test_client(request):
 
 TEST_DATA = {
     'Barolo': 'http://dbpedia.org/resource/Barolo',
-    #'Amarone': 'http://dbpedia.org/resource/Amarone',
+    'Amarone': 'http://dbpedia.org/resource/Amarone',
 }
 
 
@@ -116,6 +117,14 @@ class Client(RuleBasedStateMachine):
         state_after = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
         assert state_before == state_after
         return results
+
+    @rule(target=clients, client=clients)
+    def click_entity(self, client):
+        assume(len(client.entities) > 0)
+        state_before = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
+        result = client.entities[0].follow()
+        state_after = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
+        return result
 
 
 TestClient = Client.TestCase
