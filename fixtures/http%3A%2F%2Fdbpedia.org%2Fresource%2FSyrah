@@ -1,0 +1,9 @@
+{
+    "code": 303,
+    "body": "",
+    "headers": {
+        "Server": "Virtuoso/07.20.3224 (Linux) i686-generic-linux-glibc212-64  VDB",
+        "Content-Type": "text/turtle",
+        "Location": "http://dbpedia.org/data/Syrah.ttl"
+    }
+}

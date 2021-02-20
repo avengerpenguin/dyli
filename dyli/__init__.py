@@ -1,3 +1,4 @@
+import random
 import uuid
 import requests
 import yarl
@@ -23,14 +24,18 @@ hf.initialise({
         '@base': 'http://example.com',
         'html': 'http://www.w3.org/1999/xhtml/vocab#',
         'hydra': 'http://www.w3.org/ns/hydra/core#',
+        'dyli': 'http://example.com/vocab#',
     },
     '@id': '/',
-    'html:search': {
+    'http://example.com/#search': {
         '@id': '/search',
         '@type': 'hydra:IriTemplate',
         'hydra:template': '/search{?q}',
-        'html:search': {'@id': '/search'},
+        'http://example.com/search#search': {'@id': '/search'},
     },
+    'http://example.com/#register': {
+        '@id': '/register',
+    }
 })
 
 
@@ -59,9 +64,12 @@ def setupDatabase():
 
 @hf.resource('/search')
 def search():
+    print(request.args)
     q = request.args.get('q')
+    if request.args.get('a') == 'b':
+        raise Exception('You found it!')
 
-    print(hf.server_state.serialize(format='turtle').decode('utf-8'))
+
     r = hf.server_state.query('''
     PREFIX schema: <http://schema.org/>
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -89,6 +97,12 @@ def search():
 # @hf.post('/<str:thing_id>/like')
 # def like_thing(thing_id: str):
 #     hf.get('/' + thing_id)
+
+@hf.post('/register')
+def register():
+    pass
+    #username, password = (request.args(x) for x in ('username', 'password'))
+
 
 
 def create_thing(url: str):

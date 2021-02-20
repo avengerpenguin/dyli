@@ -1,4 +1,6 @@
 import re
+from functools import wraps
+from typing import List
 from uuid import uuid4
 
 import pytest
@@ -6,12 +8,13 @@ import httpretty
 import testypie
 import requests
 import hyperspace
+from hyperspace.affordances import Page as ClientState
 from hashlib import md5
 
 import yarl
 from hypothesis import settings, Verbosity, assume
 from hypothesis.strategies import just, tuples, sampled_from, composite, \
-    dictionaries, text, integers
+    dictionaries, text, integers, lists
 from rdflib import URIRef, RDF
 
 import dyli
@@ -77,9 +80,66 @@ TEST_DATA = {
 }
 
 
+def ensure_state_preserved(rule):
+    def wrapper(self, *args, **kwargs):
+        if self.get_state:
+            before = self.get_state()
+            result = rule(self, *args, **kwargs)
+            after = self.get_state()
+            assert before == after
+            return result
+        else:
+            return rule(self, *args, **kwargs)
+    wrapper.__name__ = rule.__name__
+    return wrapper
+
+
 class Client(RuleBasedStateMachine):
 
     clients = Bundle('clients')
+
+    def __init__(self):
+        super().__init__()
+        self.get_state = None
+
+    @rule(target=clients)
+    def new_user(self):
+        http = requests.Session()
+        http.headers = {'Accept': 'text/turtle'}
+        return hyperspace.jump('http://example.com/', http)
+
+    @rule(target=clients, client=clients, query_index=sampled_from([0, 1]),
+          values=lists(elements=text()),
+          extraneous_data=dictionaries(keys=text(alphabet='abc'), values=text()))
+    @ensure_state_preserved
+    def random_query(self, client: ClientState, query_index: int, values: List[str], extraneous_data: dict) -> ClientState:
+        assume(0 <= query_index < len(client.queries))
+
+        data = {}
+
+        query = client.queries[query_index]
+        params = sorted(query.keys())
+        for value, param in zip(values, params):
+            data[param] = value
+
+        # First interpolate advertised query params in a controlled way
+        query.build(data)
+
+        if extraneous_data:
+            # Forcibly override the query string rather than rely on safe
+            # URI template interpolation
+            query.uri = str(yarl.URL(query.uri).update_query(extraneous_data))
+
+        result = query.submit()
+        return result
+
+
+    @rule(target=clients, client=clients, entity_index=integers())
+    @ensure_state_preserved
+    def click_entity(self, client: ClientState, entity_index: int):
+        assume(0 <= entity_index < len(client.entities))
+        result = client.entities[entity_index].follow()
+        return result
 
 
 class DYLIClient(Client):
@@ -87,11 +147,9 @@ class DYLIClient(Client):
     clients = Client.clients
     labels = Bundle('labels')
 
-    @rule(target=clients)
-    def new_user(self):
-        http = requests.Session()
-        http.headers = {'Accept': 'text/turtle'}
-        return hyperspace.jump('http://example.com/', http)
+    def __init__(self):
+        super().__init__()
+        self.get_state = lambda: md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
 
     @rule(target=labels, label_uri=sampled_from(sorted(TEST_DATA.items())))
     def item_added(self, label_uri):
@@ -100,21 +158,16 @@ class DYLIClient(Client):
         return label
 
     @rule(target=clients, client=clients, label=labels)
-    def search_item(self, client: hyperspace.affordances.Page, label: str):
-        state_before = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
-
+    @ensure_state_preserved
+    def search_item(self, client: ClientState, label: str):
         results = client.search(q=label)
         assert len(results.entities) == 1
-
-        state_after = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
-        assert state_before == state_after
 
         return results
 
     @rule(target=clients, client=clients, data=dictionaries(keys=just('q'), values=text()))
-    def search_random(self, client: hyperspace.affordances.Page, data: dict):
-        state_before = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
-
+    @ensure_state_preserved
+    def search_random(self, client: ClientState, data: dict):
         if 'q' in data:
             assume(data['q'] not in TEST_DATA)
 
@@ -122,24 +175,15 @@ class DYLIClient(Client):
 
         assert len(results.entities) == 0
 
-        state_after = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
-        assert state_before == state_after
         return results
 
-    @rule(target=clients, client=clients)
-    def click_entity(self, client: hyperspace.affordances.Page):
-        assume(len(client.entities) > 0)
-        state_before = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
-
-        result = client.entities[0].follow()
-
-        state_after = md5(dyli.hf.server_state.serialize(format='nt')).hexdigest()
-        assert state_before == state_after
-
+    @rule(target=clients, client=clients, username=text(), password=text())
+    def register(self, client: ClientState, username: str, password: str):
+        result = client.register(username=username, password=password)
         return result
 
     #@rule(target=clients, thing=clients)
-    def like_thing(self, thing: hyperspace.affordances.Page):
+    def like_thing(self, thing: ClientState):
         # Check we're actually on a 'thing' page
         assume((
             URIRef(thing.url),
@@ -156,4 +200,4 @@ class DYLIClient(Client):
 
 
 TestClient = DYLIClient.TestCase
-TestClient.settings = settings(verbosity=Verbosity.verbose)
+TestClient.settings = settings(verbosity=Verbosity.verbose, max_examples=10000)

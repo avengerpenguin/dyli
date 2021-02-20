@@ -20,11 +20,11 @@ class Hyperflask(object):
         self.app.add_url_rule('/<path:path>', view_func=self.fallback_get, methods=['GET'])
 
     def resource(self, path, links=None, **options):
-        if links:
-            for rel, handler in links.items():
-                self.links.append((path, rel, handler))
-                #href = url_for(handler.__name__)
-                #self.server_state.add((URIRef(path), URIRef(rel), href))
+        # if links:
+        #     for rel, handler in links.items():
+        #         self.links.append((path, rel, handler))
+        #         href = url_for(handler.__name__)
+        #         self.server_state.add((URIRef(path), URIRef(rel), href))
 
         def decorator(handler):
             @self.app.route(path, **options)
@@ -47,6 +47,10 @@ class Hyperflask(object):
 
     def get(self, path, **options):
         options.update({'methods': ['GET']})
+        return self.resource(path, **options)
+
+    def post(self, path, **options):
+        options.update({'methods': ['POST']})
         return self.resource(path, **options)
 
     def put(self, path, **options):
@@ -84,6 +88,7 @@ class Hyperflask(object):
             return Response(data=g)
         else:
             print('Cannot find {url} in {subjects}'.format(url=url, subjects=', '.join(set(self.server_state.subjects()))))
+            self.server_state.serialize(format='turtle').decode('utf-8')
             return FlaskResponse(status=404)
 
     def query(self, name, path, params):
@@ -104,7 +109,6 @@ class Hyperflask(object):
     def add_data(self, g):
         for t in g:
             self.server_state.add(t)
-        print(self.server_state.serialize(format='turtle').decode('utf-8'))
 
     def initialise(self, definition):
         g = Graph()
